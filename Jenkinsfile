@@ -36,6 +36,10 @@ pipeline {
         }
 
         // Stage 2: Build
+        agent any
+        tools {
+            jdk 'jdk25'  # Must be configured in Jenkins Global Tool Configuration
+        }
         stage('Build') {
             steps {
                 echo "Building with Maven..."
