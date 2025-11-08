@@ -38,7 +38,7 @@ pipeline {
         // Stage 2: Build
         agent any
         tools {
-            jdk 'jdk25'  # Must be configured in Jenkins Global Tool Configuration
+            jdk 'jdk25'
         }
         stage('Build') {
             steps {
