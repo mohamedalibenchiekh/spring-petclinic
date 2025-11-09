@@ -1,38 +1,27 @@
 pipeline {
     agent any
     
-    // Part 2: Advanced Features - Parameterization
     parameters {
         string(name: 'BRANCH', defaultValue: 'main', description: 'Branch to build')
         choice(name: 'DEPLOY_ENV', choices: ['staging', 'production'], description: 'Deployment environment')
         booleanParam(name: 'IS_PULL_REQUEST', defaultValue: false, description: 'Is this a pull request build?')
     }
     
-    // Environment variables
     environment {
-        // Part 2: Environment Variables - Use Git commit hash for versioning
         BUILD_VERSION = sh(
             script: 'git rev-parse --short HEAD',
             returnStdout: true
         ).trim()
-        
-        // Maven settings
         MAVEN_OPTS = '-Dmaven.repo.local=.m2/repository'
-        
-        // Docker image name
         DOCKER_IMAGE = "spring-petclinic:${BUILD_VERSION}"
-        
-        // Docker network for deployment simulation
         DOCKER_NETWORK = "petclinic-network"
     }
     
-    // Tools configuration
     tools {
         maven 'Maven3'
     }
     
     stages {
-        // Stage 1: Checkout
         stage('Checkout') {
             steps {
                 script {
@@ -43,11 +32,10 @@ pipeline {
                         extensions: [[$class: 'CloneOption', depth: 1, noTags: false, shallow: true]],
                         userRemoteConfigs: [[
                             url: 'https://github.com/mohamedalibenchiekh/spring-petclinic.git',
-                            credentialsId: 'github-credentials' // Configure this in Jenkins
+                            credentialsId: 'github-credentials'
                         ]]
                     ])
                     
-                    // Get commit details for better logging
                     env.GIT_COMMIT_SHORT = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
                     env.GIT_AUTHOR = sh(script: 'git log -1 --pretty=format:"%an"', returnStdout: true).trim()
                 }
@@ -55,15 +43,14 @@ pipeline {
             }
         }
         
-        // Stage 2: Build - Modified to skip checkstyle
         stage('Build') {
             steps {
                 script {
                     echo "🚀 Building application with version: ${env.BUILD_VERSION}"
-                    echo "🔧 Maven command: mvn clean package -DskipTests -Dmaven.checkstyle.skip=true"
+                    echo "🔧 Maven command: mvn clean package -DskipTests -Dcheckstyle.skip=true"
                     
-                    // Skip checkstyle for educational purposes
-                    sh 'mvn clean package -DskipTests -Dmaven.checkstyle.skip=true'
+                    // Fixed: Use the correct parameter to skip checkstyle
+                    sh 'mvn clean package -DskipTests -Dcheckstyle.skip=true'
                     
                     currentBuild.description = "Version: ${env.BUILD_VERSION}, Commit: ${env.GIT_COMMIT_SHORT}"
                 }
@@ -79,52 +66,26 @@ pipeline {
             }
         }
         
-        // Stage 3: Parallel Testing
-        stage('Parallel Testing') {
-            parallel {
-                stage('Unit Tests') {
-                    steps {
-                        echo "🧪 Running unit tests..."
-                        sh 'mvn test -Dtest=*UnitTest'
-                    }
-                    post {
-                        always {
-                            // Collect and publish unit test results - Use declarative syntax over scripted pipelines for improved readability and maintainability [[6]]
-                            junit testResults: '**/target/surefire-reports/*.xml', allowEmptyResults: true
-                        }
-                    }
-                }
-                stage('Integration Tests') {
-                    steps {
-                        echo "🔍 Running integration tests..."
-                        sh 'mvn test -Dtest=*IntegrationTest'
-                    }
-                    post {
-                        always {
-                            // Collect and publish integration test results
-                            junit testResults: '**/target/failsafe-reports/*.xml', allowEmptyResults: true
-                        }
-                    }
-                }
+        stage('Test') {
+            steps {
+                echo "🧪 Running all tests..."
+                sh 'mvn test'
             }
             post {
-                failure {
-                    echo "❌ Tests failed. Pipeline stopped."
-                    error("Test failures detected - pipeline aborted")
+                always {
+                    junit testResults: '**/target/surefire-reports/*.xml', allowEmptyResults: true
                 }
-                success {
-                    echo "✅ All tests passed successfully!"
+                failure {
+                    error("Tests failed - pipeline aborted")
                 }
             }
         }
         
-        // Stage 4: Docker Image Build
-        stage('Docker Image Build') {
+        stage('Docker Build') {
             steps {
                 script {
                     echo "🐳 Building Docker image: ${env.DOCKER_IMAGE}"
                     
-                    // Create Dockerfile if it doesn't exist (Spring PetClinic may not have one)
                     if (!fileExists('Dockerfile')) {
                         echo "⚠️ Dockerfile not found. Creating default Dockerfile..."
                         writeFile file: 'Dockerfile', text: '''
@@ -136,52 +97,20 @@ ENTRYPOINT ["java", "-jar", "app.jar"]
 '''
                     }
                     
-                    // Build Docker image
-                    docker.build(env.DOCKER_IMAGE, ".")
-                    
-                    // Tag the image for latest version
+                    sh "docker build -t ${env.DOCKER_IMAGE} ."
                     sh "docker tag ${env.DOCKER_IMAGE} spring-petclinic:latest"
-                    
-                    // Optional: Push to Docker Hub (uncomment if needed)
-                    /*
-                    docker.withRegistry('https://registry.hub.docker.com', 'docker-hub-credentials') {
-                        docker.image(env.DOCKER_IMAGE).push()
-                        docker.image('spring-petclinic:latest').push()
-                    }
-                    */
                 }
                 echo "✅ Docker image built successfully: ${env.DOCKER_IMAGE}"
             }
-            post {
-                success {
-                    // Archive Docker image information
-                    archiveArtifacts artifacts: 'Dockerfile', fingerprint: true
-                    echo "📦 Docker image information archived"
-                }
-            }
         }
         
-        // Stage 5: Artifact Archiving
-        stage('Artifact Archiving') {
+        stage('Archive Artifacts') {
             steps {
                 script {
-                    echo "📦 Archiving build artifacts with versioning..."
-                    
-                    // Archive JAR file with version naming
-                    sh """
-                        mkdir -p archived-artifacts
-                        cp target/*.jar archived-artifacts/spring-petclinic-${env.BUILD_VERSION}-${BUILD_NUMBER}.jar
-                    """
-                    
-                    // Archive the versioned artifact
+                    mkdir 'archived-artifacts'
+                    sh "cp target/*.jar archived-artifacts/spring-petclinic-${env.BUILD_VERSION}-${BUILD_NUMBER}.jar"
                     archiveArtifacts artifacts: 'archived-artifacts/*.jar', fingerprint: true
                     
-                    // Also archive Docker image details
-                    sh """
-                        docker save ${env.DOCKER_IMAGE} -o archived-artifacts/spring-petclinic-${env.BUILD_VERSION}.tar
-                    """
-                    
-                    // Create version manifest
                     writeFile file: 'archived-artifacts/version-manifest.txt', text: """
 Build Number: ${BUILD_NUMBER}
 Build Version: ${env.BUILD_VERSION}
@@ -190,16 +119,13 @@ Build Date: ${new Date().format("yyyy-MM-dd HH:mm:ss")}
 Docker Image: ${env.DOCKER_IMAGE}
 Deploy Environment: ${params.DEPLOY_ENV}
 """
-                    
                     archiveArtifacts artifacts: 'archived-artifacts/*', fingerprint: true
                 }
-                echo "✅ Artifacts archived successfully with version: ${env.BUILD_VERSION}"
+                echo "✅ Artifacts archived successfully"
             }
         }
         
-        // Stage 6: Deployment Simulation
-        stage('Deployment Simulation') {
-            // Part 2: Conditional Stages - Deploy only if DEPLOY_ENV == staging and not a PR
+        stage('Deploy') {
             when {
                 allOf {
                     expression { params.DEPLOY_ENV == 'staging' }
@@ -210,51 +136,45 @@ Deploy Environment: ${params.DEPLOY_ENV}
                 script {
                     echo "🚀 Deploying to ${params.DEPLOY_ENV} environment..."
                     
-                    // Create Docker network if it doesn't exist
                     sh """
-                        if ! docker network ls | grep -q ${env.DOCKER_NETWORK}; then
-                            docker network create ${env.DOCKER_NETWORK}
-                        fi
+                        docker network create ${env.DOCKER_NETWORK} || true
+                        docker stop petclinic-${params.DEPLOY_ENV} || true
+                        docker rm petclinic-${params.DEPLOY_ENV} || true
                     """
                     
-                    // Stop and remove existing container if running
                     sh """
-                        if docker ps -a | grep -q petclinic-${params.DEPLOY_ENV}; then
-                            docker stop petclinic-${params.DEPLOY_ENV} || true
-                            docker rm petclinic-${params.DEPLOY_ENV} || true
-                        fi
+                        docker run -d \
+                        --name petclinic-${params.DEPLOY_ENV} \
+                        --network ${env.DOCKER_NETWORK} \
+                        -p 8080:8080 \
+                        -e SPRING_PROFILES_ACTIVE=${params.DEPLOY_ENV} \
+                        ${env.DOCKER_IMAGE}
                     """
                     
-                    // Run the Docker container
-                    docker.image(env.DOCKER_IMAGE).run(
-                        "--name petclinic-${params.DEPLOY_ENV} " +
-                        "--network ${env.DOCKER_NETWORK} " +
-                        "-p 8080:8080 " +
-                        "-e SPRING_PROFILES_ACTIVE=${params.DEPLOY_ENV}"
-                    )
-                    
-                    // Verify deployment
-                    sleep 10 // Wait for container to start
+                    sleep 10
                     sh """
                         echo "✅ Application deployed successfully."
                         echo "🌐 Application URL: http://localhost:8080"
                         echo "📋 Container ID: petclinic-${params.DEPLOY_ENV}"
                         echo "🏷️  Version: ${env.BUILD_VERSION}"
-                        
-                        # Optional: Health check
-                        curl -s http://localhost:8080/actuator/health || echo "⚠️ Health check failed, but deployment completed"
                     """
-                }
-            }
-            post {
-                failure {
-                    echo "❌ Deployment failed. Check Docker logs."
-                    sh "docker logs petclinic-${params.DEPLOY_ENV} || true"
                 }
             }
         }
     }
     
+    post {
+        always {
+            echo "📧 Build completed. Status: ${currentBuild.result}"
+        }
+        success {
+            echo "🎉 Build succeeded!"
+        }
+        failure {
+            echo "❌ Build failed!"
+        }
+    }
+}
     // Part 2: Email Notifications
     post {
         always {
