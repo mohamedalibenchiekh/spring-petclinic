@@ -96,7 +96,7 @@ pipeline {
             steps {
                 script {
                     writeFile file: 'Dockerfile', text: """
-                    FROM openjdk:17-jdk-slim
+                    FROM eclipse-temurin:21-jre-alpine
                     WORKDIR /app
                     COPY target/spring-petclinic-*.jar app.jar
                     EXPOSE 8080
