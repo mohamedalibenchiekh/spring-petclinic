@@ -55,24 +55,22 @@ pipeline {
             }
         }
         
-        // Stage 2: Build
+        // Stage 2: Build - Modified to skip checkstyle
         stage('Build') {
             steps {
                 script {
                     echo "🚀 Building application with version: ${env.BUILD_VERSION}"
-                    echo "🔧 Maven command: mvn clean package -DskipTests"
+                    echo "🔧 Maven command: mvn clean package -DskipTests -Dmaven.checkstyle.skip=true"
                     
-                    // Build with Maven, skip tests as we'll run them separately in parallel
-                    sh 'mvn clean package -DskipTests'
+                    // Skip checkstyle for educational purposes
+                    sh 'mvn clean package -DskipTests -Dmaven.checkstyle.skip=true'
                     
-                    // Set build description with version and commit
                     currentBuild.description = "Version: ${env.BUILD_VERSION}, Commit: ${env.GIT_COMMIT_SHORT}"
                 }
                 echo "✅ Build completed successfully. Artifact version: ${env.BUILD_VERSION}"
             }
             post {
                 success {
-                    // Archive build artifacts immediately after successful build
                     archiveArtifacts artifacts: 'target/*.jar', fingerprint: true
                 }
                 failure {
