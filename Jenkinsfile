@@ -177,7 +177,7 @@ ENTRYPOINT ["java", "-jar", "app.jar"]
                         <p><strong>Commit Hash:</strong> ${COMMIT_HASH}</p>
                         <p>View the build: <a href="${BUILD_URL}">${BUILD_URL}</a></p>
                     """,
-                    to: 'your-email@example.com',
+                    to: 'mohamed.ali.bencheikh@craftschoolship.com',
                     mimeType: 'text/html'
                 )
             }
@@ -196,7 +196,7 @@ ENTRYPOINT ["java", "-jar", "app.jar"]
                         <p><strong>Failed Stage:</strong> ${env.STAGE_NAME}</p>
                         <p>Check the logs: <a href="${BUILD_URL}console">${BUILD_URL}console</a></p>
                     """,
-                    to: 'your-email@example.com',
+                    to: 'mohamed.ali.bencheikh@craftschoolship.com',
                     mimeType: 'text/html'
                 )
             }
