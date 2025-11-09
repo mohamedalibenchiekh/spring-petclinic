@@ -174,7 +174,7 @@ Deploy Environment: ${params.DEPLOY_ENV}
             echo "❌ Build failed!"
         }
     }
-}
+
     // Part 2: Email Notifications
     post {
         always {
