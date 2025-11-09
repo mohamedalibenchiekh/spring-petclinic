@@ -163,25 +163,17 @@ Deploy Environment: ${params.DEPLOY_ENV}
         }
     }
     
+    // SINGLE POST SECTION - COMBINED ALL POST ACTIONS HERE
     post {
         always {
             echo "📧 Build completed. Status: ${currentBuild.result}"
-        }
-        success {
-            echo "🎉 Build succeeded!"
-        }
-        failure {
-            echo "❌ Build failed!"
-        }
-    }
-
-    // Part 2: Email Notifications
-    post {
-        always {
-            echo "📧 Sending build notification..."
-            emailext(
-                subject: "[${currentBuild.result}] Jenkins Build - ${JOB_NAME} #${BUILD_NUMBER}",
-                body: """
+            
+            // Email notification (only if email plugin is configured properly)
+            script {
+                try {
+                    emailext(
+                        subject: "[${currentBuild.result}] Jenkins Build - ${JOB_NAME} #${BUILD_NUMBER}",
+                        body: """
 Jenkins Build Report
 ====================
 Job: ${JOB_NAME}
@@ -195,34 +187,43 @@ Author: ${env.GIT_AUTHOR}
 Build URL: ${BUILD_URL}
 Console Output: ${BUILD_URL}console
 
-Build Summary:
-- Checkout: ${stageResult('Checkout') ?: 'N/A'}
-- Build: ${stageResult('Build') ?: 'N/A'}
-- Tests: ${stageResult('Parallel Testing') ?: 'N/A'}
-- Docker Build: ${stageResult('Docker Image Build') ?: 'N/A'}
-- Artifacts: ${stageResult('Artifact Archiving') ?: 'N/A'}
-- Deployment: ${stageResult('Deployment Simulation') ?: 'Skipped'}
-
 Artifacts are available at: ${BUILD_URL}artifact/
 """,
-                to: "dev-team@company.com", // Configure your email recipients
-                recipientProviders: [[$class: 'DevelopersRecipientProvider']]
-            )
+                        to: "dev-team@company.com",
+                        recipientProviders: [[$class: 'DevelopersRecipientProvider']]
+                    )
+                } catch (Exception e) {
+                    echo "⚠️ Email notification failed: ${e.getMessage()}"
+                    echo "💡 You may need to configure Email Extension Plugin or approve script signatures in Jenkins"
+                }
+            }
         }
         success {
-            echo "🎉 Build completed successfully!"
+            echo "🎉 Build succeeded!"
         }
         failure {
-            echo "❌ Build failed. Check logs for details."
+            echo "❌ Build failed!"
+            // Basic failure notification without complex stageResult function
+            script {
+                try {
+                    emailext(
+                        subject: "❌ FAILED: Jenkins Build - ${JOB_NAME} #${BUILD_NUMBER}",
+                        body: """
+URGENT: Build Failed
+====================
+Job: ${JOB_NAME}
+Build Number: ${BUILD_NUMBER}
+Status: ${currentBuild.result}
+Branch: ${params.BRANCH}
+Build URL: ${BUILD_URL}
+Console Output: ${BUILD_URL}console
+""",
+                        to: "dev-team@company.com"
+                    )
+                } catch (Exception e) {
+                    echo "⚠️ Failed sending failure email: ${e.getMessage()}"
+                }
+            }
         }
-    }
-}
-
-// Helper function to get stage results
-def stageResult(stageName) {
-    try {
-        return currentBuild.rawBuild.getActions(jenkins.model.CauseOfInterruption.class).find { it.stageName == stageName }?.result ?: 'SUCCESS'
-    } catch (Exception e) {
-        return 'UNKNOWN'
     }
 }
