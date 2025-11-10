@@ -122,7 +122,11 @@ pipeline {
             }
             steps {
                 script {
-                    echo "🚀 Deploying to ${params.DEPLOY_ENV} environment..."
+                    // Find first available port starting from 8080
+                    def port = 8080
+                    while (sh(script: "ss -tuln | grep :${port} > /dev/null 2>&1", returnStatus: true) == 0) {
+                        port++
+                    }
                     
                     def containerName = "${APP_NAME}-${BUILD_VERSION}"
                     
@@ -136,21 +140,17 @@ pipeline {
                         docker rm ${containerName} 2>/dev/null || true
                     """
                     
+                    // Use the dynamic port
                     sh """
                         docker run -d \
                           --name ${containerName} \
                           --network petclinic-network \
-                          -p 8080:8080 \
+                          -p ${port}:8080 \
                           ${DOCKER_IMAGE}
                     """
                     
-                    sh """
-                        mkdir -p /var/jenkins_home/deployments/${params.DEPLOY_ENV}
-                        cp target/${APP_NAME}-${BUILD_VERSION}.tar /var/jenkins_home/deployments/${params.DEPLOY_ENV}/
-                    """
-                    
                     echo "✅ Application deployed successfully!"
-                    echo "🌐 Access it at: http://localhost:8080 (Container: ${containerName})"
+                    echo "🌐 Access it at: http://localhost:${port} (Container: ${containerName})"
                 }
             }
         }
