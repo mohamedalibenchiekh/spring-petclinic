@@ -34,13 +34,11 @@ pipeline {
             steps {
                 script {
                     echo "🧹 Cleaning up Docker resources..."
-                    // ✅ Use COMPOSE_PROJECT_NAME to ensure we clean up this build's specific resources
                     sh """
-                        # Stop and remove any lingering containers from this specific build
-                        docker-compose -f docker-compose.yml -p ${COMPOSE_PROJECT_NAME} down --volumes --remove-orphans 2>/dev/null || true
+                        # Stop all petclinic containers (both docker-compose and deployed)
+                        docker ps -a --filter "name=*petclinic*" -q | xargs -r docker rm -f
                         
-                        # Aggressive cleanup of any petclinic-related resources
-                        docker ps -a --filter "name=petclinic-*" -q | xargs -r docker rm -f
+                        # Clean up networks and volumes
                         docker network ls --filter "name=petclinic-*" -q | xargs -r docker network rm
                         docker volume ls --filter "name=petclinic-*" -q | xargs -r docker volume rm
                     """
@@ -122,31 +120,49 @@ pipeline {
             }
             steps {
                 script {
-                    // Find first available port starting from 8080
-                    def port = 8080
-                    while (sh(script: "ss -tuln | grep :${port} > /dev/null 2>&1", returnStatus: true) == 0) {
-                        port++
-                    }
-                    
                     def containerName = "${APP_NAME}-${BUILD_VERSION}"
                     
+                    // ✅ Stop ANY container using port 8080 (not just named ones)
                     sh """
-                        docker network inspect petclinic-network >/dev/null 2>&1 || \
-                        docker network create petclinic-network
+                        EXISTING=\$(docker ps --filter "publish=8080" -q)
+                        if [ ! -z "\$EXISTING" ]; then
+                            echo "Stopping container using port 8080: \$EXISTING"
+                            docker stop \$EXISTING || true
+                            docker rm \$EXISTING || true
+                        fi
                     """
                     
+                    // ✅ Remove previous instance of this container
                     sh """
                         docker stop ${containerName} 2>/dev/null || true
                         docker rm ${containerName} 2>/dev/null || true
                     """
                     
-                    // Use the dynamic port
+                    // ✅ Create network if needed
+                    sh """
+                        docker network inspect petclinic-network >/dev/null 2>&1 || \
+                        docker network create petclinic-network
+                    """
+                    
+                    // ✅ Let Docker assign a random port automatically
                     sh """
                         docker run -d \
                           --name ${containerName} \
                           --network petclinic-network \
-                          -p ${port}:8080 \
+                          -p 0:8080 \
                           ${DOCKER_IMAGE}
+                    """
+                    
+                    // ✅ Get the randomly assigned port
+                    def port = sh(
+                        script: "docker port ${containerName} 8080 | cut -d: -f2",
+                        returnStdout: true
+                    ).trim()
+                    
+                    // ✅ Save artifact
+                    sh """
+                        mkdir -p /var/jenkins_home/deployments/${params.DEPLOY_ENV}
+                        cp target/${APP_NAME}-${BUILD_VERSION}.tar /var/jenkins_home/deployments/${params.DEPLOY_ENV}/
                     """
                     
                     echo "✅ Application deployed successfully!"
